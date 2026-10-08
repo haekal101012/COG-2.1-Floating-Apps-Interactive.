@@ -29,27 +29,74 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Check COG project
+      - name: Extract COG project
+        shell: bash
         run: |
-          echo "=== COG PROJECT ==="
-          ls -la cognew
-          echo "=== SETTINGS ==="
-          ls -la cognew/settings.gradle
-          echo "=== APP ==="
-          ls -la cognew/app
+          echo "=== Repository ==="
+          ls -lah
+
+          mkdir -p project
+
+          if [ -f "cognew" ]; then
+            echo "cognew adalah file. Mencoba extract..."
+
+            unzip -q "cognew" -d project
+
+          elif [ -d "cognew" ]; then
+            echo "cognew adalah folder."
+            cp -r cognew/. project/
+          else
+            echo "ERROR: cognew tidak ditemukan!"
+            exit 1
+          fi
+
+          echo "=== Extracted project ==="
+          find project -maxdepth 4 -type f | sort | head -200
+
+      - name: Locate Gradle project
+        id: project
+        shell: bash
+        run: |
+          SETTINGS=$(find project -type f -name "settings.gradle" -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle tidak ditemukan!"
+            echo "Isi project:"
+            find project -maxdepth 6 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Gradle project:"
+          echo "$PROJECT_DIR"
+
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Build APK
-        working-directory: cognew
+        working-directory: ${{ steps.project.outputs.project_dir }}
         run: |
+          echo "=== BUILD COG ==="
+          pwd
+          ls -lah
           gradle assembleDebug --no-daemon --stacktrace
 
       - name: Check APK
         run: |
-          ls -lh cognew/app/build/outputs/apk/debug/app-debug.apk
+          APK=$(find project -type f -path "*/build/outputs/apk/debug/app-debug.apk" -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK tidak ditemukan!"
+            find project -type f | sort
+            exit 1
+          fi
+
+          echo "APK:"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: COG-Floating-APK
-          path: cognew/app/build/outputs/apk/debug/app-debug.apk
+          path: project/**/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
