@@ -29,31 +29,30 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Extract COG project
+      - name: Find and extract project ZIP
         shell: bash
         run: |
-          echo "=== Repository ==="
+          echo "=== FILES ==="
           ls -lah
 
-          mkdir -p project
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" -print -quit)
 
-          if [ -f "cognew" ]; then
-            echo "cognew adalah file. Mencoba extract..."
-
-            unzip -q "cognew" -d project
-
-          elif [ -d "cognew" ]; then
-            echo "cognew adalah folder."
-            cp -r cognew/. project/
-          else
-            echo "ERROR: cognew tidak ditemukan!"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP project tidak ditemukan!"
             exit 1
           fi
 
-          echo "=== Extracted project ==="
-          find project -maxdepth 4 -type f | sort | head -200
+          echo "ZIP ditemukan: $ZIP_FILE"
 
-      - name: Locate Gradle project
+          rm -rf project
+          mkdir project
+
+          unzip -q "$ZIP_FILE" -d project
+
+          echo "=== HASIL EXTRACT ==="
+          find project -maxdepth 5 -type f | sort
+
+      - name: Find Android project
         id: project
         shell: bash
         run: |
@@ -61,14 +60,16 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERROR: settings.gradle tidak ditemukan!"
-            echo "Isi project:"
-            find project -maxdepth 6 -type f | sort
+
+            echo "=== STRUKTUR PROJECT ==="
+            find project -maxdepth 8 -type f | sort
+
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Gradle project:"
+          echo "Android project ditemukan:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
@@ -76,27 +77,31 @@ jobs:
       - name: Build APK
         working-directory: ${{ steps.project.outputs.project_dir }}
         run: |
-          echo "=== BUILD COG ==="
+          echo "=== BUILD COG APK ==="
           pwd
           ls -lah
+
           gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Check APK
+      - name: Find APK
+        id: apk
+        shell: bash
         run: |
           APK=$(find project -type f -path "*/build/outputs/apk/debug/app-debug.apk" -print -quit)
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK tidak ditemukan!"
-            find project -type f | sort
             exit 1
           fi
 
-          echo "APK:"
+          echo "APK ditemukan:"
           ls -lh "$APK"
+
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: COG-Floating-APK
-          path: project/**/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.apk.outputs.apk_path }}
           if-no-files-found: error
